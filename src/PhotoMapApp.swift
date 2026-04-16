@@ -18,6 +18,33 @@ struct ContentView: View {
     @State private var selectedPhoto: PhotoMetadata?
     @State private var showingFilePicker = false
     @State private var isAnalyzingAll = false
+    @State private var searchText = ""
+    
+    var filteredPhotos: [PhotoMetadata] {
+        if searchText.isEmpty {
+            return viewModel.photos
+        }
+        return viewModel.photos.filter { photo in
+            // Search by filename
+            if photo.filename.localizedCaseInsensitiveContains(searchText) {
+                return true
+            }
+            // Search by detected objects
+            if let detections = photo.detections {
+                return detections.contains { detection in
+                    detection.localizedCaseInsensitiveContains(searchText)
+                }
+            }
+            // Search by coordinates
+            if let location = photo.location {
+                let coordString = "\(String(format: "%.4f", location.latitude)), \(String(format: "%.4f", location.longitude))"
+                if coordString.contains(searchText) {
+                    return true
+                }
+            }
+            return false
+        }
+    }
     
     var body: some View {
         NavigationSplitView {
@@ -43,16 +70,54 @@ struct ContentView: View {
                     .disabled(viewModel.photos.isEmpty || isAnalyzingAll)
                 }
                 
-                List(viewModel.photos, id: \.fileURL) { photo in
+                // Search bar
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(.secondary)
+                    
+                    TextField("Search photos, objects, or location...", text: $searchText)
+                        .textFieldStyle(.roundedBorder)
+                    
+                    if !searchText.isEmpty {
+                        Button(action: { searchText = "" }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                .padding(.horizontal, 8)
+                
+                List(filteredPhotos, id: \.fileURL) { photo in
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(photo.filename)
                                     .font(.headline)
+                                    .lineLimit(1)
+                                
                                 if let location = photo.location {
                                     Text("📍 \(String(format: "%.4f, %.4f", location.latitude, location.longitude))")
                                         .font(.caption)
                                         .foregroundColor(.secondary)
+                                }
+                                
+                                if let detections = photo.detections, !detections.isEmpty {
+                                    HStack(spacing: 4) {
+                                        ForEach(detections.prefix(2), id: \.self) { detection in
+                                            Text(detection.split(separator: " ").first.map(String.init) ?? detection)
+                                                .font(.caption2)
+                                                .padding(.horizontal, 6)
+                                                .padding(.vertical, 2)
+                                                .background(Color.blue.opacity(0.2))
+                                                .foregroundColor(.blue)
+                                                .cornerRadius(4)
+                                        }
+                                        if let detections = photo.detections, detections.count > 2 {
+                                            Text("+\(detections.count - 2)")
+                                                .font(.caption2)
+                                                .foregroundColor(.secondary)
+                                        }
+                                    }
                                 }
                             }
                             
@@ -84,7 +149,8 @@ struct ContentView: View {
                             .font(.caption)
                             .foregroundColor(.secondary)
                     } else {
-                        Text(viewModel.photos.count == 1 ? "1 photo" : "\(viewModel.photos.count) photos")
+                        let count = filteredPhotos.count
+                        Text(count == 1 ? "1 photo" : "\(count) photos")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
