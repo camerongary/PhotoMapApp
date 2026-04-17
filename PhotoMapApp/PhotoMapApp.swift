@@ -134,6 +134,7 @@ struct ContentView: View {
                     .onTapGesture {
                         selectedPhoto = photo
                     }
+                    .background(selectedPhoto?.fileURL == photo.fileURL ? Color.blue.opacity(0.1) : Color.clear)
                 }
                 .listStyle(.sidebar)
                 
@@ -195,74 +196,113 @@ struct PhotoDetailView: View {
     @ObservedObject var viewModel: PhotoViewModel
     @State private var detections: [String] = []
     @State private var isAnalyzing = false
+    @State private var photoImage: NSImage?
     
     var body: some View {
         VStack(spacing: 16) {
-            VStack(spacing: 8) {
-                Text(photo.filename)
-                    .font(.title2)
-                    .fontWeight(.bold)
-                
-                if let location = photo.location {
-                    HStack(spacing: 8) {
-                        Image(systemName: "location.fill")
-                        VStack(alignment: .leading) {
-                            Text("Latitude: \(String(format: "%.4f", location.latitude))")
-                            Text("Longitude: \(String(format: "%.4f", location.longitude))")
-                            if let altitude = location.altitude {
-                                Text("Altitude: \(String(format: "%.1f m", altitude))")
+            // Photo Image
+            if let photoImage = photoImage {
+                Image(nsImage: photoImage)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxHeight: 400)
+                    .cornerRadius(8)
+                    .shadow(radius: 4)
+            } else {
+                VStack {
+                    ProgressView()
+                    Text("Loading photo...")
+                        .foregroundColor(.secondary)
+                }
+                .frame(height: 300)
+            }
+            
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    // Photo Info
+                    VStack(spacing: 8) {
+                        Text(photo.filename)
+                            .font(.title2)
+                            .fontWeight(.bold)
+                        
+                        if let location = photo.location {
+                            HStack(spacing: 8) {
+                                Image(systemName: "location.fill")
+                                VStack(alignment: .leading) {
+                                    Text("Latitude: \(String(format: "%.4f", location.latitude))")
+                                    Text("Longitude: \(String(format: "%.4f", location.longitude))")
+                                    if let altitude = location.altitude {
+                                        Text("Altitude: \(String(format: "%.1f m", altitude))")
+                                    }
+                                }
+                                Spacer()
+                            }
+                            .padding(12)
+                            .background(Color(.controlBackgroundColor))
+                            .cornerRadius(8)
+                        }
+                    }
+                    
+                    // Map
+                    if !viewModel.validLocations.isEmpty {
+                        MapView(locations: viewModel.validLocations, selectedLocation: photo.location)
+                            .frame(height: 250)
+                            .cornerRadius(8)
+                    }
+                    
+                    // Detection Results
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Objects Detected")
+                            .font(.headline)
+                        
+                        if isAnalyzing {
+                            ProgressView()
+                                .frame(maxWidth: .infinity, alignment: .center)
+                        } else if let photoDetections = photo.detections, !photoDetections.isEmpty {
+                            VStack(alignment: .leading, spacing: 6) {
+                                ForEach(photoDetections, id: \.self) { detection in
+                                    HStack {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundColor(.green)
+                                        Text(detection)
+                                        Spacer()
+                                    }
+                                }
+                            }
+                        } else {
+                            Button(action: analyzePhoto) {
+                                Text("Analyze Photo")
+                                    .frame(maxWidth: .infinity)
+                                    .padding(8)
+                                    .background(Color.accentColor)
+                                    .foregroundColor(.white)
+                                    .cornerRadius(6)
                             }
                         }
-                        Spacer()
                     }
                     .padding(12)
                     .background(Color(.controlBackgroundColor))
                     .cornerRadius(8)
                 }
+                .padding(16)
             }
-            
-            if !viewModel.validLocations.isEmpty {
-                MapView(locations: viewModel.validLocations, selectedLocation: photo.location)
-                    .frame(height: 300)
-                    .cornerRadius(8)
-            }
-            
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Objects Detected")
-                    .font(.headline)
-                
-                if isAnalyzing {
-                    ProgressView()
-                        .frame(maxWidth: .infinity, alignment: .center)
-                } else if let photoDetections = photo.detections, !photoDetections.isEmpty {
-                    VStack(alignment: .leading, spacing: 6) {
-                        ForEach(photoDetections, id: \.self) { detection in
-                            HStack {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(.green)
-                                Text(detection)
-                                Spacer()
-                            }
-                        }
-                    }
-                } else {
-                    Button(action: analyzePhoto) {
-                        Text("Analyze Photo")
-                            .frame(maxWidth: .infinity)
-                            .padding(8)
-                            .background(Color.accentColor)
-                            .foregroundColor(.white)
-                            .cornerRadius(6)
-                    }
+        }
+        .onAppear {
+            loadPhoto()
+        }
+        .onChange(of: photo.fileURL) { _ in
+            loadPhoto()
+        }
+    }
+    
+    private func loadPhoto() {
+        Task {
+            if let image = NSImage(contentsOf: photo.fileURL) {
+                DispatchQueue.main.async {
+                    self.photoImage = image
                 }
             }
-            .padding(12)
-            .background(Color(.controlBackgroundColor))
-            .cornerRadius(8)
-            
-            Spacer()
         }
-        .padding(16)
     }
     
     private func analyzePhoto() {
@@ -318,7 +358,7 @@ struct MapView: NSViewRepresentable {
             let identifier = "pin"
             var annotationView = mapView.dequeueReusableAnnotationView(withIdentifier: identifier)
             if annotationView == nil {
-                annotationView = MKPinAnnotationView(annotation: annotation, reuseIdentifier: identifier)
+                annotationView = MKMarkerAnnotationView(annotation: annotation, reuseIdentifier: identifier)
             } else {
                 annotationView?.annotation = annotation
             }
