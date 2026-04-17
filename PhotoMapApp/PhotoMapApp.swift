@@ -157,15 +157,11 @@ struct ContentView: View {
             .padding(12)
         } detail: {
             if let photo = selectedPhoto {
-                PhotoDetailView(photo: photo, viewModel: viewModel)
+                PhotoDetailView(photo: photo, viewModel: viewModel, onBack: {
+                    selectedPhoto = nil
+                })
             } else {
-                VStack {
-                    Image(systemName: "photo.badge.plus")
-                        .font(.system(size: 48))
-                        .foregroundColor(.secondary)
-                    Text("Select a photo to view details")
-                        .foregroundColor(.secondary)
-                }
+                MapDetailView(viewModel: viewModel)
             }
         }
         .fileImporter(
@@ -191,100 +187,155 @@ struct ContentView: View {
     }
 }
 
+struct MapDetailView: View {
+    @ObservedObject var viewModel: PhotoViewModel
+    
+    var body: some View {
+        VStack(spacing: 16) {
+            HStack {
+                Text("Photo Map")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(Color(.controlBackgroundColor))
+            .borderBottom()
+            
+            if !viewModel.validLocations.isEmpty {
+                MapView(locations: viewModel.validLocations, selectedLocation: nil)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                VStack {
+                    Image(systemName: "map")
+                        .font(.system(size: 48))
+                        .foregroundColor(.secondary)
+                    Text("No photos with locations loaded")
+                        .foregroundColor(.secondary)
+                    Text("Select a folder to begin")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+    }
+}
+
 struct PhotoDetailView: View {
     let photo: PhotoMetadata
     @ObservedObject var viewModel: PhotoViewModel
     @State private var detections: [String] = []
     @State private var isAnalyzing = false
     @State private var photoImage: NSImage?
+    var onBack: () -> Void
     
     var body: some View {
-        VStack(spacing: 16) {
-            // Photo Image
-            if let photoImage = photoImage {
-                Image(nsImage: photoImage)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(maxHeight: 400)
-                    .cornerRadius(8)
-                    .shadow(radius: 4)
-            } else {
-                VStack {
-                    ProgressView()
-                    Text("Loading photo...")
-                        .foregroundColor(.secondary)
+        VStack(spacing: 0) {
+            // Back Button Header
+            HStack {
+                Button(action: onBack) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left")
+                        Text("Back to Map")
+                    }
+                    .foregroundColor(.accentColor)
                 }
-                .frame(height: 300)
+                Spacer()
+                Text(photo.filename)
+                    .font(.headline)
+                    .lineLimit(1)
+                Spacer()
             }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(Color(.controlBackgroundColor))
+            .borderBottom()
             
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    // Photo Info
-                    VStack(spacing: 8) {
-                        Text(photo.filename)
-                            .font(.title2)
-                            .fontWeight(.bold)
-                        
+            VStack(spacing: 16) {
+                // Photo Image
+                if let photoImage = photoImage {
+                    Image(nsImage: photoImage)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxHeight: 400)
+                        .cornerRadius(8)
+                        .shadow(radius: 4)
+                } else {
+                    VStack {
+                        ProgressView()
+                        Text("Loading photo...")
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(height: 300)
+                }
+                
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        // Location Info
                         if let location = photo.location {
-                            HStack(spacing: 8) {
-                                Image(systemName: "location.fill")
-                                VStack(alignment: .leading) {
-                                    Text("Latitude: \(String(format: "%.4f", location.latitude))")
-                                    Text("Longitude: \(String(format: "%.4f", location.longitude))")
-                                    if let altitude = location.altitude {
-                                        Text("Altitude: \(String(format: "%.1f m", altitude))")
+                            VStack(spacing: 8) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "location.fill")
+                                    VStack(alignment: .leading) {
+                                        Text("Latitude: \(String(format: "%.4f", location.latitude))")
+                                        Text("Longitude: \(String(format: "%.4f", location.longitude))")
+                                        if let altitude = location.altitude {
+                                            Text("Altitude: \(String(format: "%.1f m", altitude))")
+                                        }
                                     }
+                                    Spacer()
                                 }
-                                Spacer()
                             }
                             .padding(12)
                             .background(Color(.controlBackgroundColor))
                             .cornerRadius(8)
                         }
-                    }
-                    
-                    // Map
-                    if !viewModel.validLocations.isEmpty {
-                        MapView(locations: viewModel.validLocations, selectedLocation: photo.location)
-                            .frame(height: 250)
-                            .cornerRadius(8)
-                    }
-                    
-                    // Detection Results
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Objects Detected")
-                            .font(.headline)
                         
-                        if isAnalyzing {
-                            ProgressView()
-                                .frame(maxWidth: .infinity, alignment: .center)
-                        } else if let photoDetections = photo.detections, !photoDetections.isEmpty {
-                            VStack(alignment: .leading, spacing: 6) {
-                                ForEach(photoDetections, id: \.self) { detection in
-                                    HStack {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .foregroundColor(.green)
-                                        Text(detection)
-                                        Spacer()
+                        // Map
+                        if !viewModel.validLocations.isEmpty {
+                            MapView(locations: viewModel.validLocations, selectedLocation: photo.location)
+                                .frame(height: 250)
+                                .cornerRadius(8)
+                        }
+                        
+                        // Detection Results
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Objects Detected")
+                                .font(.headline)
+                            
+                            if isAnalyzing {
+                                ProgressView()
+                                    .frame(maxWidth: .infinity, alignment: .center)
+                            } else if let photoDetections = photo.detections, !photoDetections.isEmpty {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    ForEach(photoDetections, id: \.self) { detection in
+                                        HStack {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .foregroundColor(.green)
+                                            Text(detection)
+                                            Spacer()
+                                        }
                                     }
                                 }
-                            }
-                        } else {
-                            Button(action: analyzePhoto) {
-                                Text("Analyze Photo")
-                                    .frame(maxWidth: .infinity)
-                                    .padding(8)
-                                    .background(Color.accentColor)
-                                    .foregroundColor(.white)
-                                    .cornerRadius(6)
+                            } else {
+                                Button(action: analyzePhoto) {
+                                    Text("Analyze Photo")
+                                        .frame(maxWidth: .infinity)
+                                        .padding(8)
+                                        .background(Color.accentColor)
+                                        .foregroundColor(.white)
+                                        .cornerRadius(6)
+                                }
                             }
                         }
+                        .padding(12)
+                        .background(Color(.controlBackgroundColor))
+                        .cornerRadius(8)
                     }
-                    .padding(12)
-                    .background(Color(.controlBackgroundColor))
-                    .cornerRadius(8)
+                    .padding(16)
                 }
-                .padding(16)
             }
         }
         .onAppear {
@@ -403,8 +454,11 @@ class PhotoViewModel: NSObject, ObservableObject {
             }
         }
         
-        self.photos = loadedPhotos.sorted { $0.filename < $1.filename }
-        self.validLocations = allLocations
+        DispatchQueue.main.async {
+            self.photos = loadedPhotos.sorted { $0.filename < $1.filename }
+            self.validLocations = allLocations
+            print("Loaded \(loadedPhotos.count) photos with \(allLocations.count) locations")
+        }
     }
     
     func extractMetadata(from fileURL: URL) -> PhotoMetadata? {
@@ -523,6 +577,13 @@ struct ObjectDetection {
     
     var displayString: String {
         "\(label) (\(String(format: "%.0f%%", confidence * 100)))"
+    }
+}
+
+extension View {
+    func borderBottom() -> some View {
+        self
+            .overlay(Divider(), alignment: .bottom)
     }
 }
 
