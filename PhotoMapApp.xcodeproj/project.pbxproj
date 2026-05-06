@@ -6,7 +6,7 @@
 	objectVersion = 56;
 	objects = {
 /* Begin PBXFileReference section */
-		0A1234561A2B3C4D5E6F7G8H = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoMapApp/PhotoMapApp.swift; sourceTree = "<group>"; };
+		0A1234561A2B3C4D5E6F7G8H = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoMapApp.swift; sourceTree = "<group>"; };
 		0A1234561A2B3C4D5E6F7G8V = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PhotoMapApp/Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 /* Begin PBXBuildFile section */
