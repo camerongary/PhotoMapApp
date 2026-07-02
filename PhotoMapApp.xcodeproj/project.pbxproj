@@ -8,9 +8,11 @@
 /* Begin PBXFileReference section */
 		0A1234561A2B3C4D5E6F7G8H = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoMapApp.swift; sourceTree = "<group>"; };
 		0A1234561A2B3C4D5E6F7G8V = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PhotoMapApp/Info.plist; sourceTree = "<group>"; };
+		0A1234561A2B3C4D5E6F7G9A = {isa = PBXFileReference; lastKnownFileType = image.icns; path = AppIcon.icns; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 /* Begin PBXBuildFile section */
 		0A1234561A2B3C4D5E6F7G8I = {isa = PBXBuildFile; fileRef = 0A1234561A2B3C4D5E6F7G8H; };
+		0A1234561A2B3C4D5E6F7G9B = {isa = PBXBuildFile; fileRef = 0A1234561A2B3C4D5E6F7G9A; };
 /* End PBXBuildFile section */
 /* Begin PBXGroup section */
 		0A1234561A2B3C4D5E6F7G8J = {
@@ -18,6 +20,7 @@
 			children = (
 				0A1234561A2B3C4D5E6F7G8H,
 				0A1234561A2B3C4D5E6F7G8V,
+				0A1234561A2B3C4D5E6F7G9A,
 			);
 			path = PhotoMapApp;
 			sourceTree = "<group>";
@@ -45,6 +48,7 @@
 			buildConfigurationList = 0A1234561A2B3C4D5E6F7G8L;
 			buildPhases = (
 				0A1234561A2B3C4D5E6F7G8M,
+				0A1234561A2B3C4D5E6F7G9C,
 			);
 			buildRules = (
 			);
@@ -95,6 +99,16 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+/* Begin PBXResourcesBuildPhase section */
+		0A1234561A2B3C4D5E6F7G9C = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0A1234561A2B3C4D5E6F7G9B,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 /* Begin XCBuildConfiguration section */
 		0A1234561A2B3C4D5E6F7G8O = {
 			isa = XCBuildConfiguration;
