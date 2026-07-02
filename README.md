@@ -9,6 +9,7 @@ A native macOS app that maps your geotagged photos. Open a folder of photos, see
 - Supported formats: JPEG, PNG, HEIC/HEIF, TIFF, DNG, and RAW (ORF, CR2, CR3, NEF, ARW)
 - The last folder reopens automatically at launch (configurable in Settings)
 - Search photos by filename, detected object, camera, or coordinates (**⌘F**)
+- Sidebar list with photo thumbnails; browse the collection as a map (**⌘1**) or a thumbnail grid (**⌘2**) — the choice persists across launches
 
 ### 🗺️ Interactive Mapping
 - All geotagged photos appear on the map, with automatic clustering as you zoom out
@@ -42,13 +43,14 @@ A native macOS app that maps your geotagged photos. Open a folder of photos, see
 |----------|--------|
 | ⌘O | Open Folder |
 | ⌘F | Search |
+| ⌘1 / ⌘2 | View as map / grid |
 | Space / ⌘Y | Quick Look selected photo |
 | ⇧⌘A | Analyze selected photo |
 | ⌥⌘A | Analyze all photos |
 | ⇧⌘R | Reveal in Finder |
 | ⌥⌘C | Copy photo file |
 | ⇧⌘C | Copy coordinates |
-| Esc / ⇧⌘M | Back to the map |
+| Esc / ⇧⌘M | Back to all photos |
 | ⌘, | Settings |
 
 ## Requirements

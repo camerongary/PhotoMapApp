@@ -34,6 +34,7 @@ enum Pref {
     static let maxDetections = "maxDetections"
     static let reopenLastFolder = "reopenLastFolder"
     static let recentFolders = "recentFolders"
+    static let browseMode = "browseMode"
 }
 
 struct SettingsView: View {
@@ -106,6 +107,20 @@ struct PhotoMapCommands: Commands {
             .disabled(library.selectedPhoto?.location == nil)
         }
 
+        CommandGroup(before: .toolbar) {
+            Button("View as Map") {
+                library.show(.map)
+            }
+            .keyboardShortcut("1")
+
+            Button("View as Grid") {
+                library.show(.grid)
+            }
+            .keyboardShortcut("2")
+
+            Divider()
+        }
+
         CommandMenu("Photo") {
             Button("Analyze Photo") {
                 library.analyzeSelected()
@@ -140,7 +155,7 @@ struct PhotoMapCommands: Commands {
 
             Divider()
 
-            Button("Show Map") {
+            Button("Show All Photos") {
                 library.selectionID = nil
             }
             .keyboardShortcut("m", modifiers: [.command, .shift])
@@ -191,10 +206,19 @@ struct ContentView: View {
         } detail: {
             if let photo = library.selectedPhoto {
                 PhotoDetailView(photo: photo)
+            } else if library.browseMode == .grid {
+                GridPane(photos: filteredPhotos)
             } else {
                 MapPane()
             }
         }
+    }
+
+    private var browseModeBinding: Binding<BrowseMode> {
+        Binding(
+            get: { library.browseMode },
+            set: { library.show($0) }
+        )
     }
 
     // MARK: Sidebar
@@ -215,7 +239,7 @@ struct ContentView: View {
             List(selection: $library.selectionID) {
                 ForEach(filteredPhotos) { photo in
                     PhotoRow(photo: photo)
-                        .contextMenu { rowContextMenu(for: photo) }
+                        .contextMenu { PhotoContextMenuItems(photo: photo) }
                         .onDrag { NSItemProvider(contentsOf: photo.fileURL) ?? NSItemProvider() }
                 }
             }
@@ -231,24 +255,6 @@ struct ContentView: View {
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 statusBar
             }
-        }
-    }
-
-    @ViewBuilder
-    private func rowContextMenu(for photo: PhotoMetadata) -> some View {
-        Button("Analyze Photo") { library.analyze(photo) }
-        Button("Quick Look") { library.quickLookItem = photo.fileURL }
-        Divider()
-        Button("Reveal in Finder") {
-            NSWorkspace.shared.activateFileViewerSelecting([photo.fileURL])
-        }
-        Button("Open in Default App") {
-            NSWorkspace.shared.open(photo.fileURL)
-        }
-        Divider()
-        Button("Copy Photo File") { library.copyFile(photo) }
-        if photo.location != nil {
-            Button("Copy Coordinates") { library.copyCoordinates(photo) }
         }
     }
 
@@ -282,6 +288,15 @@ struct ContentView: View {
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
+        ToolbarItem {
+            Picker("View", selection: browseModeBinding) {
+                Label("Map", systemImage: "map").tag(BrowseMode.map)
+                Label("Grid", systemImage: "square.grid.2x2").tag(BrowseMode.grid)
+            }
+            .pickerStyle(.segmented)
+            .help("Browse photos on a map (⌘1) or in a grid (⌘2)")
+        }
+
         ToolbarItemGroup {
             Button {
                 library.openFolderPanel()
@@ -325,9 +340,9 @@ struct ContentView: View {
                 Button {
                     library.selectionID = nil
                 } label: {
-                    Label("Show Map", systemImage: "map")
+                    Label("All Photos", systemImage: library.browseMode == .grid ? "square.grid.2x2" : "map")
                 }
-                .help("Return to the map of all photos (⇧⌘M)")
+                .help("Return to all photos (⇧⌘M)")
             }
         }
     }
@@ -370,13 +385,100 @@ struct WindowDocumentURL: NSViewRepresentable {
     }
 }
 
+// MARK: - Shared Photo Actions
+
+struct PhotoContextMenuItems: View {
+    @EnvironmentObject var library: PhotoLibrary
+    let photo: PhotoMetadata
+
+    var body: some View {
+        Button("Analyze Photo") { library.analyze(photo) }
+        Button("Quick Look") { library.quickLookItem = photo.fileURL }
+        Divider()
+        Button("Reveal in Finder") {
+            NSWorkspace.shared.activateFileViewerSelecting([photo.fileURL])
+        }
+        Button("Open in Default App") {
+            NSWorkspace.shared.open(photo.fileURL)
+        }
+        Divider()
+        Button("Copy Photo File") { library.copyFile(photo) }
+        if photo.location != nil {
+            Button("Copy Coordinates") { library.copyCoordinates(photo) }
+        }
+    }
+}
+
+// MARK: - Thumbnails
+
+actor ThumbnailStore {
+    static let shared = ThumbnailStore()
+    private let cache = NSCache<NSString, NSImage>()
+
+    init() {
+        cache.countLimit = 600
+    }
+
+    func thumbnail(for url: URL, maxPixel: Int) -> NSImage? {
+        let key = "\(url.path)#\(maxPixel)" as NSString
+        if let cached = cache.object(forKey: key) {
+            return cached
+        }
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+        ]
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+            return nil
+        }
+        let image = NSImage(cgImage: cgImage, size: .zero)
+        cache.setObject(image, forKey: key)
+        return image
+    }
+}
+
+/// A square thumbnail that sizes to its container and loads asynchronously.
+struct SquareThumbnail: View {
+    let url: URL
+    let maxPixel: Int
+    @State private var image: NSImage?
+
+    var body: some View {
+        Color.clear
+            .aspectRatio(1, contentMode: .fit)
+            .overlay {
+                if let image {
+                    Image(nsImage: image)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    ZStack {
+                        Rectangle().fill(.quaternary)
+                        Image(systemName: "photo")
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+            }
+            .clipped()
+            .task(id: url) {
+                image = await ThumbnailStore.shared.thumbnail(for: url, maxPixel: maxPixel)
+            }
+    }
+}
+
 // MARK: - Photo Row
 
 struct PhotoRow: View {
     let photo: PhotoMetadata
 
     var body: some View {
-        HStack {
+        HStack(spacing: 8) {
+            SquareThumbnail(url: photo.fileURL, maxPixel: 96)
+                .frame(width: 44, height: 44)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+
             VStack(alignment: .leading, spacing: 3) {
                 Text(photo.filename)
                     .lineLimit(1)
@@ -414,6 +516,67 @@ struct PhotoRow: View {
             Spacer()
         }
         .padding(.vertical, 2)
+    }
+}
+
+// MARK: - Grid Pane
+
+struct GridPane: View {
+    @EnvironmentObject var library: PhotoLibrary
+    let photos: [PhotoMetadata]
+
+    private let columns = [GridItem(.adaptive(minimum: 150, maximum: 220), spacing: 14)]
+
+    var body: some View {
+        if photos.isEmpty {
+            ContentUnavailableView {
+                Label("No Photos", systemImage: "square.grid.2x2")
+            } description: {
+                Text("Open a folder of photos to browse them here.")
+            } actions: {
+                Button("Open Folder…") { library.openFolderPanel() }
+            }
+        } else {
+            ScrollView {
+                LazyVGrid(columns: columns, spacing: 16) {
+                    ForEach(photos) { photo in
+                        PhotoGridCell(photo: photo)
+                            .onTapGesture { library.selectionID = photo.id }
+                            .contextMenu { PhotoContextMenuItems(photo: photo) }
+                            .onDrag { NSItemProvider(contentsOf: photo.fileURL) ?? NSItemProvider() }
+                    }
+                }
+                .padding(16)
+            }
+        }
+    }
+}
+
+struct PhotoGridCell: View {
+    let photo: PhotoMetadata
+
+    var body: some View {
+        VStack(spacing: 6) {
+            SquareThumbnail(url: photo.fileURL, maxPixel: 480)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(alignment: .bottomTrailing) {
+                    if photo.location != nil {
+                        Image(systemName: "mappin.circle.fill")
+                            .font(.system(size: 16))
+                            .symbolRenderingMode(.palette)
+                            .foregroundStyle(.white, .red)
+                            .shadow(radius: 2)
+                            .padding(6)
+                    }
+                }
+
+            Text(photo.filename)
+                .font(.caption)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .foregroundStyle(.secondary)
+        }
+        .contentShape(Rectangle())
     }
 }
 
@@ -674,10 +837,18 @@ struct PhotoMapView: NSViewRepresentable {
 
 // MARK: - Library Model
 
+enum BrowseMode: String {
+    case map
+    case grid
+}
+
 @MainActor
 final class PhotoLibrary: ObservableObject {
     @Published var photos: [PhotoMetadata] = []
     @Published var selectionID: URL?
+    @Published var browseMode: BrowseMode {
+        didSet { UserDefaults.standard.set(browseMode.rawValue, forKey: Pref.browseMode) }
+    }
     @Published var folderURL: URL?
     @Published var recentFolders: [URL] = []
     @Published var isAnalyzingAll = false
@@ -698,7 +869,14 @@ final class PhotoLibrary: ObservableObject {
         photos.filter { $0.location != nil }
     }
 
+    /// Switches the overview between map and grid, returning to it if a photo is open.
+    func show(_ mode: BrowseMode) {
+        browseMode = mode
+        selectionID = nil
+    }
+
     init() {
+        browseMode = BrowseMode(rawValue: UserDefaults.standard.string(forKey: Pref.browseMode) ?? "") ?? .map
         UserDefaults.standard.register(defaults: [
             Pref.confidenceThreshold: 0.3,
             Pref.maxDetections: 5,
