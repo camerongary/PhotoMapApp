@@ -35,6 +35,7 @@ enum Pref {
     static let reopenLastFolder = "reopenLastFolder"
     static let recentFolders = "recentFolders"
     static let browseMode = "browseMode"
+    static let sortOrder = "sortOrder"
 }
 
 struct SettingsView: View {
@@ -94,17 +95,17 @@ struct PhotoMapCommands: Commands {
 
         CommandGroup(after: .pasteboard) {
             Divider()
-            Button("Copy Photo File") {
-                library.copySelectedFile()
+            Button(library.selectionIDs.count > 1 ? "Copy Photo Files" : "Copy Photo File") {
+                library.copySelectedFiles()
             }
             .keyboardShortcut("c", modifiers: [.command, .option])
-            .disabled(library.selectedPhoto == nil)
+            .disabled(library.selectionIDs.isEmpty)
 
             Button("Copy Coordinates") {
                 library.copySelectedCoordinates()
             }
             .keyboardShortcut("c", modifiers: [.command, .shift])
-            .disabled(library.selectedPhoto?.location == nil)
+            .disabled(library.singleSelectedPhoto?.location == nil)
         }
 
         CommandGroup(before: .toolbar) {
@@ -119,14 +120,21 @@ struct PhotoMapCommands: Commands {
             .keyboardShortcut("2")
 
             Divider()
+
+            Picker("Sort By", selection: $library.sortOrder) {
+                Text("Name").tag(PhotoSort.name)
+                Text("Date Taken").tag(PhotoSort.dateTaken)
+            }
+
+            Divider()
         }
 
         CommandMenu("Photo") {
-            Button("Analyze Photo") {
+            Button(library.selectionIDs.count > 1 ? "Analyze Photos" : "Analyze Photo") {
                 library.analyzeSelected()
             }
             .keyboardShortcut("a", modifiers: [.command, .shift])
-            .disabled(library.selectedPhoto == nil)
+            .disabled(library.selectionIDs.isEmpty)
 
             Button("Analyze All Photos") {
                 library.analyzeAll()
@@ -140,26 +148,34 @@ struct PhotoMapCommands: Commands {
                 library.quickLookSelected()
             }
             .keyboardShortcut("y")
-            .disabled(library.selectedPhoto == nil)
+            .disabled(library.selectionIDs.isEmpty)
 
             Button("Reveal in Finder") {
                 library.revealSelectedInFinder()
             }
             .keyboardShortcut("r", modifiers: [.command, .shift])
-            .disabled(library.selectedPhoto == nil)
+            .disabled(library.selectionIDs.isEmpty)
 
             Button("Open in Default App") {
                 library.openSelectedInDefaultApp()
             }
-            .disabled(library.selectedPhoto == nil)
+            .disabled(library.selectionIDs.isEmpty)
+
+            Divider()
+
+            Button("Move to Trash") {
+                library.trashSelection()
+            }
+            .keyboardShortcut(.delete)
+            .disabled(library.selectionIDs.isEmpty)
 
             Divider()
 
             Button("Show All Photos") {
-                library.selectionID = nil
+                library.selectionIDs = []
             }
             .keyboardShortcut("m", modifiers: [.command, .shift])
-            .disabled(library.selectionID == nil)
+            .disabled(library.selectionIDs.isEmpty)
         }
     }
 }
@@ -204,7 +220,7 @@ struct ContentView: View {
             sidebar
                 .navigationSplitViewColumnWidth(min: 240, ideal: 300)
         } detail: {
-            if let photo = library.selectedPhoto {
+            if let photo = library.singleSelectedPhoto {
                 PhotoDetailView(photo: photo)
             } else if library.browseMode == .grid {
                 GridPane(photos: filteredPhotos)
@@ -236,7 +252,7 @@ struct ContentView: View {
         } else if filteredPhotos.isEmpty {
             ContentUnavailableView.search(text: searchText)
         } else {
-            List(selection: $library.selectionID) {
+            List(selection: $library.selectionIDs) {
                 ForEach(filteredPhotos) { photo in
                     PhotoRow(photo: photo)
                         .contextMenu { PhotoContextMenuItems(photo: photo) }
@@ -244,9 +260,10 @@ struct ContentView: View {
                 }
             }
             .onCopyCommand {
-                guard let photo = library.selectedPhoto,
-                      let provider = NSItemProvider(contentsOf: photo.fileURL) else { return [] }
-                return [provider]
+                library.selectedPhotos.compactMap { NSItemProvider(contentsOf: $0.fileURL) }
+            }
+            .onDeleteCommand {
+                library.trashSelection()
             }
             .onKeyPress(.space) {
                 library.quickLookSelected()
@@ -265,6 +282,10 @@ struct ContentView: View {
                     .controlSize(.small)
                     .frame(width: 80)
                 Text("Analyzing \(library.analysisCompleted) of \(library.photos.count)…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else if library.selectionIDs.count > 1 {
+                Text("\(library.selectionIDs.count) of \(library.photos.count) selected")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else if !searchText.isEmpty {
@@ -322,7 +343,7 @@ struct ContentView: View {
                 .disabled(library.photos.isEmpty)
             }
 
-            if library.selectedPhoto != nil {
+            if let photo = library.singleSelectedPhoto {
                 Button {
                     library.quickLookSelected()
                 } label: {
@@ -337,8 +358,13 @@ struct ContentView: View {
                 }
                 .help("Show this photo in the Finder (⇧⌘R)")
 
+                ShareLink(item: photo.fileURL) {
+                    Label("Share", systemImage: "square.and.arrow.up")
+                }
+                .help("Share this photo")
+
                 Button {
-                    library.selectionID = nil
+                    library.selectionIDs = []
                 } label: {
                     Label("All Photos", systemImage: library.browseMode == .grid ? "square.grid.2x2" : "map")
                 }
@@ -391,21 +417,30 @@ struct PhotoContextMenuItems: View {
     @EnvironmentObject var library: PhotoLibrary
     let photo: PhotoMetadata
 
+    private var targets: [PhotoMetadata] {
+        library.contextTargets(for: photo)
+    }
+
+    private var plural: Bool { targets.count > 1 }
+
     var body: some View {
-        Button("Analyze Photo") { library.analyze(photo) }
+        Button(plural ? "Analyze Photos" : "Analyze Photo") {
+            targets.forEach { library.analyze($0) }
+        }
         Button("Quick Look") { library.quickLookItem = photo.fileURL }
         Divider()
-        Button("Reveal in Finder") {
-            NSWorkspace.shared.activateFileViewerSelecting([photo.fileURL])
-        }
-        Button("Open in Default App") {
-            NSWorkspace.shared.open(photo.fileURL)
+        Button("Reveal in Finder") { library.reveal(targets) }
+        Button("Open in Default App") { library.openInDefaultApp(targets) }
+        ShareLink(items: targets.map(\.fileURL)) {
+            Text(plural ? "Share Photos…" : "Share…")
         }
         Divider()
-        Button("Copy Photo File") { library.copyFile(photo) }
-        if photo.location != nil {
+        Button(plural ? "Copy Photo Files" : "Copy Photo File") { library.copyFiles(targets) }
+        if !plural, photo.location != nil {
             Button("Copy Coordinates") { library.copyCoordinates(photo) }
         }
+        Divider()
+        Button("Move to Trash") { library.trash(targets) }
     }
 }
 
@@ -462,6 +497,7 @@ struct SquareThumbnail: View {
                 }
             }
             .clipped()
+            .accessibilityHidden(true)
             .task(id: url) {
                 image = await ThumbnailStore.shared.thumbnail(for: url, maxPixel: maxPixel)
             }
@@ -540,10 +576,19 @@ struct GridPane: View {
             ScrollView {
                 LazyVGrid(columns: columns, spacing: 16) {
                     ForEach(photos) { photo in
-                        PhotoGridCell(photo: photo)
-                            .onTapGesture { library.selectionID = photo.id }
+                        PhotoGridCell(photo: photo, isSelected: library.selectionIDs.contains(photo.id))
+                            .onTapGesture {
+                                if NSEvent.modifierFlags.contains(.command) {
+                                    library.toggleSelection(photo.id)
+                                } else {
+                                    library.selectionIDs = [photo.id]
+                                }
+                            }
                             .contextMenu { PhotoContextMenuItems(photo: photo) }
                             .onDrag { NSItemProvider(contentsOf: photo.fileURL) ?? NSItemProvider() }
+                            .accessibilityElement(children: .ignore)
+                            .accessibilityLabel(photo.filename)
+                            .accessibilityAddTraits(photo.location != nil ? [.isButton, .isImage] : [.isButton])
                     }
                 }
                 .padding(16)
@@ -554,11 +599,18 @@ struct GridPane: View {
 
 struct PhotoGridCell: View {
     let photo: PhotoMetadata
+    let isSelected: Bool
 
     var body: some View {
         VStack(spacing: 6) {
             SquareThumbnail(url: photo.fileURL, maxPixel: 480)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay {
+                    if isSelected {
+                        RoundedRectangle(cornerRadius: 8)
+                            .strokeBorder(Color.accentColor, lineWidth: 3)
+                    }
+                }
                 .overlay(alignment: .bottomTrailing) {
                     if photo.location != nil {
                         Image(systemName: "mappin.circle.fill")
@@ -599,7 +651,7 @@ struct MapPane: View {
                 }
             }
         } else {
-            PhotoMapView(photos: library.locatedPhotos, selectionID: $library.selectionID)
+            PhotoMapView(photos: library.locatedPhotos, selectionIDs: $library.selectionIDs)
         }
     }
 }
@@ -632,7 +684,7 @@ struct PhotoDetailView: View {
         }
         .navigationSubtitle(photo.filename)
         .onExitCommand {
-            library.selectionID = nil
+            library.selectionIDs = []
         }
         .task(id: photo.id) {
             photoImage = nil
@@ -671,7 +723,7 @@ struct PhotoDetailView: View {
                 if let altitude = location.altitude {
                     LabeledContent("Altitude", value: String(format: "%.1f m", altitude))
                 }
-                PhotoMapView(photos: [photo], selectionID: .constant(nil))
+                PhotoMapView(photos: [photo], selectionIDs: .constant([]))
                     .frame(height: 220)
                     .clipShape(RoundedRectangle(cornerRadius: 6))
                     .padding(.top, 4)
@@ -755,7 +807,7 @@ final class PhotoAnnotation: NSObject, MKAnnotation {
 
 struct PhotoMapView: NSViewRepresentable {
     let photos: [PhotoMetadata]
-    @Binding var selectionID: URL?
+    @Binding var selectionIDs: Set<URL>
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -828,7 +880,7 @@ struct PhotoMapView: NSViewRepresentable {
             } else if let annotation = view.annotation as? PhotoAnnotation {
                 let id = annotation.photoID
                 DispatchQueue.main.async {
-                    self.parent.selectionID = id
+                    self.parent.selectionIDs = [id]
                 }
             }
         }
@@ -842,12 +894,23 @@ enum BrowseMode: String {
     case grid
 }
 
+enum PhotoSort: String {
+    case name
+    case dateTaken
+}
+
 @MainActor
 final class PhotoLibrary: ObservableObject {
     @Published var photos: [PhotoMetadata] = []
-    @Published var selectionID: URL?
+    @Published var selectionIDs: Set<URL> = []
     @Published var browseMode: BrowseMode {
         didSet { UserDefaults.standard.set(browseMode.rawValue, forKey: Pref.browseMode) }
+    }
+    @Published var sortOrder: PhotoSort {
+        didSet {
+            UserDefaults.standard.set(sortOrder.rawValue, forKey: Pref.sortOrder)
+            photos = sorted(photos)
+        }
     }
     @Published var folderURL: URL?
     @Published var recentFolders: [URL] = []
@@ -860,23 +923,52 @@ final class PhotoLibrary: ObservableObject {
     private var analysisTask: Task<Void, Never>?
     private static let maxRecentFolders = 10
 
-    var selectedPhoto: PhotoMetadata? {
-        guard let selectionID else { return nil }
-        return photos.first { $0.id == selectionID }
+    /// All currently selected photos, in list order.
+    var selectedPhotos: [PhotoMetadata] {
+        photos.filter { selectionIDs.contains($0.id) }
+    }
+
+    /// The selected photo when exactly one is selected — drives the detail view.
+    var singleSelectedPhoto: PhotoMetadata? {
+        selectionIDs.count == 1 ? selectedPhotos.first : nil
     }
 
     var locatedPhotos: [PhotoMetadata] {
         photos.filter { $0.location != nil }
     }
 
+    func toggleSelection(_ id: URL) {
+        if selectionIDs.contains(id) {
+            selectionIDs.remove(id)
+        } else {
+            selectionIDs.insert(id)
+        }
+    }
+
+    /// Context-menu convention: acting on a selected item targets the whole
+    /// selection; acting on an unselected item targets just that item.
+    func contextTargets(for photo: PhotoMetadata) -> [PhotoMetadata] {
+        selectionIDs.contains(photo.id) && selectionIDs.count > 1 ? selectedPhotos : [photo]
+    }
+
+    func sorted(_ list: [PhotoMetadata]) -> [PhotoMetadata] {
+        switch sortOrder {
+        case .name:
+            return list.sorted { $0.filename.localizedStandardCompare($1.filename) == .orderedAscending }
+        case .dateTaken:
+            return list.sorted { ($0.dateTaken ?? .distantPast) < ($1.dateTaken ?? .distantPast) }
+        }
+    }
+
     /// Switches the overview between map and grid, returning to it if a photo is open.
     func show(_ mode: BrowseMode) {
         browseMode = mode
-        selectionID = nil
+        selectionIDs = []
     }
 
     init() {
         browseMode = BrowseMode(rawValue: UserDefaults.standard.string(forKey: Pref.browseMode) ?? "") ?? .map
+        sortOrder = PhotoSort(rawValue: UserDefaults.standard.string(forKey: Pref.sortOrder) ?? "") ?? .name
         UserDefaults.standard.register(defaults: [
             Pref.confidenceThreshold: 0.3,
             Pref.maxDetections: 5,
@@ -909,9 +1001,9 @@ final class PhotoLibrary: ObservableObject {
         Task {
             do {
                 let loaded = try await PhotoScanner.scan(url)
-                photos = loaded
+                photos = sorted(loaded)
                 folderURL = url
-                selectionID = nil
+                selectionIDs = []
                 addRecentFolder(url)
                 if loaded.isEmpty {
                     errorMessage = "No supported photos were found in “\(url.lastPathComponent)”."
@@ -956,7 +1048,7 @@ final class PhotoLibrary: ObservableObject {
     }
 
     func analyzeSelected() {
-        if let photo = selectedPhoto {
+        for photo in selectedPhotos {
             analyze(photo)
         }
     }
@@ -987,35 +1079,63 @@ final class PhotoLibrary: ObservableObject {
     // MARK: Actions on selection
 
     func quickLookSelected() {
-        quickLookItem = selectedPhoto?.fileURL
+        quickLookItem = selectedPhotos.first?.fileURL
     }
 
     func revealSelectedInFinder() {
-        guard let photo = selectedPhoto else { return }
-        NSWorkspace.shared.activateFileViewerSelecting([photo.fileURL])
+        reveal(selectedPhotos)
+    }
+
+    func reveal(_ targets: [PhotoMetadata]) {
+        guard !targets.isEmpty else { return }
+        NSWorkspace.shared.activateFileViewerSelecting(targets.map(\.fileURL))
     }
 
     func openSelectedInDefaultApp() {
-        guard let photo = selectedPhoto else { return }
-        NSWorkspace.shared.open(photo.fileURL)
+        openInDefaultApp(selectedPhotos)
     }
 
-    func copySelectedFile() {
-        if let photo = selectedPhoto {
-            copyFile(photo)
+    func openInDefaultApp(_ targets: [PhotoMetadata]) {
+        for photo in targets {
+            NSWorkspace.shared.open(photo.fileURL)
         }
     }
 
-    func copyFile(_ photo: PhotoMetadata) {
+    func copySelectedFiles() {
+        copyFiles(selectedPhotos)
+    }
+
+    func copyFiles(_ targets: [PhotoMetadata]) {
+        guard !targets.isEmpty else { return }
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        pasteboard.writeObjects([photo.fileURL as NSURL])
+        pasteboard.writeObjects(targets.map { $0.fileURL as NSURL })
     }
 
     func copySelectedCoordinates() {
-        if let photo = selectedPhoto {
+        if let photo = singleSelectedPhoto {
             copyCoordinates(photo)
         }
+    }
+
+    func trashSelection() {
+        trash(selectedPhotos)
+    }
+
+    func trash(_ targets: [PhotoMetadata]) {
+        guard !targets.isEmpty else { return }
+        var trashedIDs: Set<URL> = []
+        for photo in targets {
+            do {
+                try FileManager.default.trashItem(at: photo.fileURL, resultingItemURL: nil)
+                trashedIDs.insert(photo.id)
+            } catch {
+                errorMessage = "Couldn’t move “\(photo.filename)” to the Trash: \(error.localizedDescription)"
+                break
+            }
+        }
+        photos.removeAll { trashedIDs.contains($0.id) }
+        selectionIDs.subtract(trashedIDs)
     }
 
     func copyCoordinates(_ photo: PhotoMetadata) {

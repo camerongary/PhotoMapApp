@@ -10,6 +10,10 @@ A native macOS app that maps your geotagged photos. Open a folder of photos, see
 - The last folder reopens automatically at launch (configurable in Settings)
 - Search photos by filename, detected object, camera, or coordinates (**⌘F**)
 - Sidebar list with photo thumbnails; browse the collection as a map (**⌘1**) or a thumbnail grid (**⌘2**) — the choice persists across launches
+- Multi-selection everywhere: shift/⌘-click in the list, ⌘-click in the grid, ⌘A to select all — then analyze, copy, share, reveal, or trash the whole selection at once
+- Move photos to the Trash with **⌘⌫** (recoverable from the Trash, so no nagging)
+- Share photos to Mail, Messages, AirDrop, etc. from the toolbar or context menu
+- Sort by name or date taken (View menu), persisted
 
 ### 🗺️ Interactive Mapping
 - All geotagged photos appear on the map, with automatic clustering as you zoom out
@@ -48,8 +52,10 @@ A native macOS app that maps your geotagged photos. Open a folder of photos, see
 | ⇧⌘A | Analyze selected photo |
 | ⌥⌘A | Analyze all photos |
 | ⇧⌘R | Reveal in Finder |
-| ⌥⌘C | Copy photo file |
+| ⌥⌘C | Copy photo file(s) |
 | ⇧⌘C | Copy coordinates |
+| ⌘⌫ | Move to Trash |
+| ⌘A | Select all photos |
 | Esc / ⇧⌘M | Back to all photos |
 | ⌘, | Settings |
 
