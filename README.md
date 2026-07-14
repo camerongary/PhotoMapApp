@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/icon.png" width="128" alt="Photo Map Explorer icon">
+</p>
+
 # Photo Map Explorer
 
 A native macOS app that maps your geotagged photos. Open a folder of photos, see them on an interactive map, inspect their camera metadata, and identify objects in them with on-device AI.
